@@ -162,6 +162,13 @@ func drawDMGBackground(_ rect: CGRect, scale: CGFloat) {
     let ss = sub.size()
     sub.draw(at: CGPoint(x: rect.midX - ss.width / 2, y: rect.height - 88 * scale))
 
+    let update = NSAttributedString(string: "Already installed? Double-click Nida to update it in one step.", attributes: [
+        .font: NSFont.systemFont(ofSize: 12 * scale, weight: .medium),
+        .foregroundColor: hex(0x9A7420),
+    ])
+    let us = update.size()
+    update.draw(at: CGPoint(x: rect.midX - us.width / 2, y: 52 * scale))
+
     // arrow between icon slots (icons centered at x=170 and x=490, y=215 from top)
     let y = rect.height - 215 * scale
     let arrow = NSBezierPath()
