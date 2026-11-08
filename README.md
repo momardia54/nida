@@ -135,6 +135,11 @@ SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=nida-notar
   VERSION=1.0.0 ./scripts/make_dmg.sh
 ```
 
+## Roadmap
+
+Planned work (dependency watching with Dependabot, automatic updates through Warden, Warden licence support,
+notarized releases) is in [ROADMAP.md](ROADMAP.md).
+
 ## Notes
 
 - `@State` is a macro in the macOS 27 SDK and its plugin only ships with full Xcode, so the views use
