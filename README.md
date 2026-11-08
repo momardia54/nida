@@ -1,0 +1,87 @@
+# Nida · نداء
+
+Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is calculated on the Mac
+(no API, no account, works offline).
+
+## Features
+
+- **Menu bar**: next prayer and time, a countdown, or just an icon. While a prayer's window is open the
+  item turns **green and drains through amber to red** as the window closes.
+- **Prayer windows**: Fajr→sunrise, Dhuhr→Asr, Asr→Maghrib, Maghrib→Isha, Isha→Islamic midnight (or Fajr).
+- **Adhan**: two mastered recordings plus a synthesized chime, or import your own. Each prayer is set up
+  separately: adhan / chime / notification only / off, voice, length (full, opening takbīr, ~30 s … ~2 min),
+  and a reminder. Shortened adhans stop at a phrase boundary and fade out, so they never cut off mid-word.
+- **Output**: always play the adhan on a chosen speaker (e.g. the Mac's speakers while music goes to
+  headphones), with fallback to the system default when it's unplugged. Optionally raise and unmute that
+  output for the adhan. The previous volume is restored afterwards, unless you changed it yourself meanwhile.
+- **Notifications** with a *Stop adhan* action, optional reminders, and an optional "window closing" warning.
+- **Location**: automatic (CoreLocation) or city search. 21 conventions, chosen automatically per country
+  (UOIF in France, ISNA in North America, Umm al-Qura in Saudi Arabia, Diyanet in Türkiye, JAKIM in Malaysia…),
+  with automatic Ḥanafī Asr where it's the norm. Per-prayer minute offsets let you match your mosque.
+- **Travel**: re-checks your location on wake, on time-zone change and every few hours. On a move it can
+  update automatically, ask first (notification + banner), or do nothing.
+- **Anywhere**: high-latitude rules are applied automatically. In polar day or night, times come from the
+  nearest latitude where the sun still rises and sets.
+- Onboarding on first launch, Hijri date, launch at login.
+
+## Install and update
+
+Open `dist/Nida-<version>.dmg` and either drag **Nida** into **Applications**, or double-click Nida in the
+disk image window: it offers to **Install** (or **Update** an older copy). It then quits the old version,
+replaces it and relaunches from Applications. Settings are kept (they live in your user defaults, not in the app).
+
+To change anything after installing: **gear menu › Settings…**, or **gear menu › Run setup again…**. Setup
+starts from your current settings and only overwrites what you change in it.
+
+The build is ad-hoc signed. On your own Mac it opens normally. On another Mac, the first launch needs
+**right-click → Open** (or System Settings › Privacy & Security › *Open Anyway*), because it isn't notarized.
+See *Release* below to notarize it.
+
+## Build
+
+Needs only the Xcode Command Line Tools (full Xcode isn't required), plus `ffmpeg` and `python3` + `numpy`
+if you regenerate the audio.
+
+```sh
+./scripts/build_app.sh              # → dist/Nida.app (universal: Apple silicon + Intel)
+VERSION=1.0.0 ./scripts/make_dmg.sh # → dist/Nida-1.0.0.dmg (drag-to-Applications window)
+./scripts/prepare_audio.sh          # re-download and re-master the adhan recordings
+swift scripts/make_art.swift build/art   # regenerate icon + DMG background
+```
+
+The first DMG build asks once to let Terminal control Finder (that's how the window layout is set).
+If you decline, the DMG still works, just without the custom layout.
+
+Debug helpers (debug builds only):
+
+```sh
+swift build
+.build/debug/Nida --times 48.8566 2.3522 Europe/Paris france 2026-11-08   # print a day's times
+NIDA_SOUNDS=Resources/Sounds .build/debug/Nida --snapshot /tmp/nida-shots   # render every screen to PNG
+```
+
+## Release (notarized, for sharing)
+
+With an Apple Developer account ($99/yr):
+
+```sh
+xcrun notarytool store-credentials nida-notary     # once
+SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=nida-notary \
+  VERSION=1.0.0 ./scripts/make_dmg.sh
+```
+
+## Notes
+
+- `@State` is a macro in the macOS 27 SDK and its plugin only ships with full Xcode, so the views use
+  `@ViewState` (a typealias for the same property wrapper). See `Sources/Nida/ViewState.swift`.
+- Calculated times were cross-checked against the Aladhan API for Makkah, Paris, London, New York, Cairo,
+  Karachi, Dakar, Istanbul and Kuala Lumpur: within 0–2 minutes, apart from documented method differences.
+
+## Credits
+
+- Prayer calculation: [Adhan Swift](https://github.com/batoulapps/adhan-swift) by Batoul Apps, MIT.
+- "Classic" adhan: *Beautiful adhan* by Adam-synagda, Wikimedia Commons, CC0.
+- "Serene" adhan: *Azan* by Andrewler, Wikimedia Commons,
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), remastered (filtered, denoised,
+  loudness-normalized). The remastered file is shared under the same licence.
+- Chime: synthesized for Nida (`scripts/make_chime.py`).
