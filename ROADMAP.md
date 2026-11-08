@@ -11,7 +11,7 @@ Two rules apply to everything below:
   Anything new that contacts a server is explained in the app, can be turned off, and sends no location or
   personal data.
 
-## Current: 1.3.0
+## Current: 1.3.1
 
 Live countdown, minimal CPU and memory, README screenshots, tag-triggered release workflow (not yet run on
 GitHub).

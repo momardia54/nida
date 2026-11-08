@@ -74,6 +74,11 @@ private struct GeneralTab: View {
             }
             Section("System") {
                 Toggle("Open Nida at login", isOn: Binding(get: { app.launchAtLogin }, set: { app.launchAtLogin = $0 }))
+                VStack(alignment: .leading, spacing: 2) {
+                    Toggle("Keep Mac awake for prayer alerts", isOn: $store.prefs.stayAwakeForPrayers)
+                    Text("Off: your Mac sleeps as usual, and prayers that fall while it sleeps are missed. On: the screen still turns off and locks, but the Mac stays awake so the adhan can play.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 HStack {
                     Text("Notifications")
                     Spacer()

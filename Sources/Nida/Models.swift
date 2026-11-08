@@ -222,6 +222,9 @@ struct Preferences: Codable, Equatable {
     var raiseVolume = false
     var raiseVolumeLevel = 0.6
     var closingWarning = 0
+    /// Opt-in: keep the Mac from idle-sleeping so alerts fire on time. The screen still turns off
+    /// and locks on schedule; only system sleep (where no app can run) is blocked.
+    var stayAwakeForPrayers = false
 
     var menuStyle: MenuStyle = .time
     var colorize = true

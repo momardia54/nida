@@ -73,6 +73,9 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
     private var cancellables = Set<AnyCancellable>()
 
     private var cachedEngine: PrayerEngine?
+    /// Held while "stay awake for prayers" is on: blocks idle system sleep (and App Nap),
+    /// never display sleep or the screen lock.
+    private var awakeActivity: NSObjectProtocol?
 
     /// Reused while settings and location are unchanged, so its per-day cache survives.
     var engine: PrayerEngine? {
@@ -108,6 +111,8 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
 
         // Re-render as soon as settings or playback change.
         store.$prefs.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in self?.tick() }.store(in: &cancellables)
+        store.$prefs.map(\.stayAwakeForPrayers).removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] on in self?.setStayAwake(on) }.store(in: &cancellables)
         player.$nowPlaying.receive(on: RunLoop.main).sink { [weak self] _ in
             DispatchQueue.main.async { self?.tick() }
         }.store(in: &cancellables)
@@ -347,6 +352,18 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
         if !force && clock.timeIntervalSince(lastBackgroundRefresh) < 600 { return }
         lastBackgroundRefresh = Date()
         location.refresh()
+    }
+
+    private func setStayAwake(_ on: Bool) {
+        if on, awakeActivity == nil {
+            // .userInitiated = idle system sleep disabled + no App Nap. Display sleep and the
+            // screen lock are unaffected, and Apple menu → Sleep still works.
+            awakeActivity = ProcessInfo.processInfo.beginActivity(
+                options: .userInitiated, reason: "Nida: keeping prayer alerts on time")
+        } else if !on, let activity = awakeActivity {
+            ProcessInfo.processInfo.endActivity(activity)
+            awakeActivity = nil
+        }
     }
 
     @objc private func didWake() {
