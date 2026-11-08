@@ -69,6 +69,12 @@ if let i = args.firstIndex(of: "--route-test"), args.count > i + 2, let level = 
     print("after:  \(vol())  stillPlaying=\(AdhanPlayer.shared.isPlaying)")
     exit(0)
 }
+if let i = args.firstIndex(of: "--readme"), args.count > i + 1 {
+    _ = NSApplication.shared
+    NSApp.setActivationPolicy(.accessory)
+    ReadmeShots.run(outDir: args[i + 1])
+    exit(0)
+}
 if let i = args.firstIndex(of: "--snapshot"), args.count > i + 1 {
     _ = NSApplication.shared
     NSApp.setActivationPolicy(.accessory)

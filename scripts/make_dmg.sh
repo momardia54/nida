@@ -4,6 +4,7 @@
 # For a notarized release (needs an Apple Developer account):
 #   SIGN_ID="Developer ID Application: …" NOTARY_PROFILE=<keychain profile> ./scripts/make_dmg.sh
 #   (create the profile once with: xcrun notarytool store-credentials <profile>)
+#   or, e.g. in CI: NOTARY_APPLE_ID=… NOTARY_PASSWORD=<app-specific> NOTARY_TEAM_ID=… instead of NOTARY_PROFILE
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -29,7 +30,12 @@ if [[ -d /Volumes/Nida ]] && ! hdiutil detach "/Volumes/Nida" -quiet 2>/dev/null
   echo "✗ A disk named Nida is mounted and in use (is Nida running from it?). Quit Nida and eject it, then retry." >&2
   exit 1
 fi
-hdiutil create -srcfolder "$STAGE" -volname "Nida" -fs HFS+ -format UDRW -ov "$RW" >/dev/null
+# hdiutil occasionally reports "Resource busy" on CI runners; retry a few times.
+for attempt in 1 2 3 4 5; do
+  hdiutil create -srcfolder "$STAGE" -volname "Nida" -fs HFS+ -format UDRW -ov "$RW" >/dev/null && break
+  [[ $attempt == 5 ]] && { echo "✗ hdiutil create failed" >&2; exit 1; }
+  sleep 3
+done
 hdiutil attach "$RW" -readwrite -noverify -noautoopen -mountpoint "/Volumes/Nida" >/dev/null
 
 # Volume icon
@@ -37,7 +43,8 @@ cp dist/Nida.app/Contents/Resources/AppIcon.icns "/Volumes/Nida/.VolumeIcon.icns
 SetFile -a C "/Volumes/Nida" 2>/dev/null || true
 
 echo "› Laying out the window"
-if ! osascript <<'APPLESCRIPT' >/dev/null 2>&1
+# Bounded to 90 s so a headless machine waiting on an Automation prompt can't hang the build.
+if ! perl -e 'alarm 90; exec @ARGV' osascript <<'APPLESCRIPT' >/dev/null 2>&1
 tell application "Finder"
   tell disk "Nida"
     open
@@ -75,6 +82,11 @@ if [[ -n ${SIGN_ID:-} && $SIGN_ID != - ]]; then
   if [[ -n ${NOTARY_PROFILE:-} ]]; then
     echo "› Notarizing"
     xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DMG"
+  elif [[ -n ${NOTARY_APPLE_ID:-} && -n ${NOTARY_PASSWORD:-} && -n ${NOTARY_TEAM_ID:-} ]]; then
+    echo "› Notarizing"
+    xcrun notarytool submit "$DMG" --apple-id "$NOTARY_APPLE_ID" --password "$NOTARY_PASSWORD" \
+      --team-id "$NOTARY_TEAM_ID" --wait
     xcrun stapler staple "$DMG"
   fi
 fi

@@ -1,0 +1,132 @@
+name: Release
+
+# Push a tag like v1.3.0 → builds the universal app + DMG and publishes a GitHub Release.
+# Run it by hand (Actions › Release › Run workflow) for a test build: the DMG is kept as a run artifact.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version for the test build"
+        default: "0.0.0-test"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pick version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="${{ github.event.inputs.version || '0.0.0-test' }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+          echo "Building Nida $VERSION (build ${{ github.run_number }})"
+
+      - name: Toolchain
+        run: |
+          swift --version
+
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/arm64/checkouts
+            .build/x86_64/checkouts
+            .build/arm64/repositories
+            .build/x86_64/repositories
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+
+      - name: Import signing certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 16)"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Build app and DMG
+        env:
+          SIGN_ID: ${{ env.HAS_CERT == 'true' && secrets.MACOS_SIGN_ID || '-' }}
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_PASSWORD: ${{ secrets.NOTARY_PASSWORD }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+        run: ./scripts/make_dmg.sh
+
+      - name: Verify
+        run: |
+          DMG="dist/Nida-$VERSION.dmg"
+          test -f "$DMG"
+          hdiutil verify "$DMG"
+          # Check the app as users will get it: from inside the DMG.
+          MNT="$(mktemp -d)"
+          hdiutil attach "$DMG" -readonly -nobrowse -mountpoint "$MNT" >/dev/null
+          lipo -archs "$MNT/Nida.app/Contents/MacOS/Nida"
+          codesign --verify --strict --verbose=2 "$MNT/Nida.app"
+          /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$MNT/Nida.app/Contents/Info.plist"
+          hdiutil detach "$MNT" -quiet
+          (cd dist && shasum -a 256 "Nida-$VERSION.dmg" > "Nida-$VERSION.dmg.sha256")
+          cat "dist/Nida-$VERSION.dmg.sha256"
+
+      - name: Keep DMG as a run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Nida-${{ steps.version.outputs.version }}
+          path: |
+            dist/Nida-${{ steps.version.outputs.version }}.dmg
+            dist/Nida-${{ steps.version.outputs.version }}.dmg.sha256
+          retention-days: 14
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ "$HAS_CERT" == "true" ]]; then
+            NOTE="Signed with a Developer ID."
+          else
+            NOTE="Ad-hoc signed: on first launch, right-click Nida › Open (or System Settings › Privacy & Security › Open Anyway)."
+          fi
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          **Install:** open the DMG and drag Nida into Applications. Already installed? Double-click Nida in the DMG to update in one step.
+
+          $NOTE
+          EOF
+          PRERELEASE=""
+          [[ "$VERSION" == *-* ]] && PRERELEASE="--prerelease"
+          gh release create "$GITHUB_REF_NAME" \
+            "dist/Nida-$VERSION.dmg" "dist/Nida-$VERSION.dmg.sha256" \
+            --title "Nida $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes $PRERELEASE \
+            || gh release upload "$GITHUB_REF_NAME" "dist/Nida-$VERSION.dmg" "dist/Nida-$VERSION.dmg.sha256" --clobber
+
+      - name: Clean up keychain
+        if: always() && env.HAS_CERT == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true

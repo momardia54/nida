@@ -3,11 +3,24 @@
 Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is calculated on the Mac
 (no API, no account, works offline).
 
+<p align="center">
+  <img src="docs/screenshots/hero-light.png" width="49%" alt="Nida during Asr, with two hours left: green pill in the menu bar">
+  <img src="docs/screenshots/hero-dark.png" width="49%" alt="Nida near the end of Asr: red pill and a live countdown to Maghrib">
+</p>
+
+**Download:** the latest DMG is on the [Releases](../../releases/latest) page.
+
 ## Features
 
 - **Menu bar**: while a prayer's window is open, a colored pill shows it with the time left (green, through
-  amber, to red as it closes), followed by the next prayer and its time. Between windows: the next prayer
-  with a countdown. Compact and color-only styles too.
+  amber, to red as it closes), followed by a live countdown to the next prayer. Between windows: the next
+  prayer with a countdown. In the final 10 minutes it counts in seconds (configurable). Compact and
+  color-only styles too.
+
+  ![Menu bar styles in light and dark menu bars](docs/screenshots/menubar-styles.png)
+
+  ![The popover as Asr's window closes: green, amber, red](docs/screenshots/window-colors.png)
+
 - **Prayer windows**: Fajr→sunrise, Dhuhr→Asr, Asr→Maghrib, Maghrib→Isha, Isha→Islamic midnight (or Fajr).
 - **Adhan**: five mastered, freely licensed recordings plus a synthesized chime, or add your own: drop files on
   Settings › Adhan, or use **Find more voices…** (opens Assabile's collection). Imported voices are analyzed
@@ -26,6 +39,14 @@ Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is
 - **Anywhere**: high-latitude rules are applied automatically. In polar day or night, times come from the
   nearest latitude where the sun still rises and sets.
 - Onboarding on first launch, Hijri date, launch at login.
+
+  ![Setup: location, calculation method, adhan output](docs/screenshots/setup.png)
+
+<p align="center">
+  <img src="docs/screenshots/settings-general.png" width="32%" alt="Settings › General">
+  <img src="docs/screenshots/settings-calculation.png" width="32%" alt="Settings › Calculation">
+  <img src="docs/screenshots/settings-adhan.png" width="32%" alt="Settings › Adhan">
+</p>
 
 ## Always current, very light
 
@@ -73,9 +94,38 @@ Debug helpers (debug builds only):
 swift build
 .build/debug/Nida --times 48.8566 2.3522 Europe/Paris france 2026-11-08   # print a day's times
 NIDA_SOUNDS=Resources/Sounds .build/debug/Nida --snapshot /tmp/nida-shots   # render every screen to PNG
+NIDA_SOUNDS=Resources/Sounds .build/debug/Nida --readme docs/screenshots     # regenerate the README images
 ```
 
-## Release (notarized, for sharing)
+## Release
+
+### Automatic (GitHub Actions)
+
+Push a version tag and `.github/workflows/release.yml` builds the universal app and the DMG on a macOS runner,
+then publishes a GitHub Release with the DMG and its SHA-256 checksum attached:
+
+```sh
+git tag v1.3.0 && git push origin v1.3.0
+```
+
+The tag sets the version (`v1.3.0` → 1.3.0) and the run number sets the build number. **Actions › Release ›
+Run workflow** does a test build without publishing: the DMG is attached to the run as an artifact.
+
+Without secrets the release is ad-hoc signed, so the first launch on another Mac needs right-click → Open.
+To ship it signed and notarized, add these repository secrets (Settings › Secrets and variables › Actions):
+
+| Secret | What it is |
+|---|---|
+| `MACOS_CERTIFICATE` | Developer ID Application certificate + key exported as `.p12`, base64-encoded (`base64 -i cert.p12 \| pbcopy`) |
+| `MACOS_CERTIFICATE_PASSWORD` | The `.p12` export password |
+| `MACOS_SIGN_ID` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `NOTARY_APPLE_ID` | Your Apple ID email |
+| `NOTARY_PASSWORD` | An app-specific password from account.apple.com |
+| `NOTARY_TEAM_ID` | Your 10-character team ID |
+
+With only the first three, the release is Developer ID signed but not notarized.
+
+### By hand (notarized)
 
 With an Apple Developer account ($99/yr):
 
