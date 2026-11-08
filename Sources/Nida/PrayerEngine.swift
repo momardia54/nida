@@ -46,10 +46,24 @@ enum PrayerPhase: Equatable {
     var isOpen: Bool { if case .open = self { true } else { false } }
 }
 
+/// Holds computed days so each day is calculated once, not every second.
+final class DayCache {
+    var times: [Int: DayTimes?] = [:]
+    var windows: [Int: [PrayerWindow]] = [:]
+    var polar: [Int: Bool] = [:]
+
+    func trim() {
+        if times.count > 8 { times.removeAll(); windows.removeAll(); polar.removeAll() }
+    }
+}
+
 struct PrayerEngine {
     let prefs: Preferences
     let location: SavedLocation
     let calendar: Calendar
+    private let cache = DayCache()
+
+    private func dayKey(_ date: Date) -> Int { Int(calendar.startOfDay(for: date).timeIntervalSince1970) }
 
     init(prefs: Preferences, location: SavedLocation) {
         self.prefs = prefs
@@ -101,11 +115,28 @@ struct PrayerEngine {
 
     /// True when the sun doesn't rise or set here today and times come from a nearer latitude.
     func usesNearestLatitude(on day: Date) -> Bool {
+        let key = dayKey(day)
+        if let hit = cache.polar[key] { return hit }
+        let result = computeNearestLatitude(day)
+        cache.polar[key] = result
+        return result
+    }
+
+    private func computeNearestLatitude(_ day: Date) -> Bool {
         let comps = calendar.dateComponents([.year, .month, .day], from: day)
         return PrayerTimes(coordinates: coordinates, date: comps, calculationParameters: parameters(for: day)) == nil
     }
 
     func times(for day: Date) -> DayTimes? {
+        let key = dayKey(day)
+        if let hit = cache.times[key] { return hit }
+        cache.trim()
+        let result = computeTimes(day)
+        cache.times[key] = result
+        return result
+    }
+
+    private func computeTimes(_ day: Date) -> DayTimes? {
         guard
             let t = prayerTimes(for: day),
             let tomorrow = calendar.date(byAdding: .day, value: 1, to: day),
@@ -121,6 +152,14 @@ struct PrayerEngine {
     }
 
     func windows(for day: Date) -> [PrayerWindow] {
+        let key = dayKey(day)
+        if let hit = cache.windows[key] { return hit }
+        let result = computeWindows(day)
+        cache.windows[key] = result
+        return result
+    }
+
+    private func computeWindows(_ day: Date) -> [PrayerWindow] {
         guard let t = times(for: day) else { return [] }
         let ishaEnd = prefs.ishaEnd == .midnight ? t.midnight : t.nextFajr
         return [
@@ -146,21 +185,35 @@ struct PrayerEngine {
         return nil
     }
 
+    // Date formatters are expensive to create, so one per time zone is kept.
+    private static var timeFormatters: [String: DateFormatter] = [:]
+    private static var hijriFormatters: [String: DateFormatter] = [:]
+
     func timeString(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.timeZone = location.timeZone
-        f.timeStyle = .short
-        f.dateStyle = .none
+        let id = location.timeZoneID
+        let f = Self.timeFormatters[id] ?? {
+            let f = DateFormatter()
+            f.timeZone = location.timeZone
+            f.timeStyle = .short
+            f.dateStyle = .none
+            Self.timeFormatters[id] = f
+            return f
+        }()
         return f.string(from: date)
     }
 
     func hijriString(_ date: Date) -> String {
-        let f = DateFormatter()
-        var cal = Calendar(identifier: .islamicUmmAlQura)
-        cal.timeZone = location.timeZone
-        f.calendar = cal
-        f.timeZone = location.timeZone
-        f.setLocalizedDateFormatFromTemplate("d MMMM y")
+        let id = location.timeZoneID
+        let f = Self.hijriFormatters[id] ?? {
+            let f = DateFormatter()
+            var cal = Calendar(identifier: .islamicUmmAlQura)
+            cal.timeZone = location.timeZone
+            f.calendar = cal
+            f.timeZone = location.timeZone
+            f.setLocalizedDateFormatFromTemplate("d MMMM y")
+            Self.hijriFormatters[id] = f
+            return f
+        }()
         return f.string(from: date)
     }
 }
@@ -184,6 +237,14 @@ enum Urgency {
 
 
 enum Format {
+    /// Live countdown: "55:42", "5:12:08", or "1h 12m" without seconds.
+    static func countdown(_ seconds: TimeInterval, showSeconds: Bool) -> String {
+        guard showSeconds else { return duration(seconds) }
+        let total = max(0, Int(seconds.rounded(.up)))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, s) : String(format: "%d:%02d", m, s)
+    }
+
     static func duration(_ seconds: TimeInterval) -> String {
         let minutes = Int((seconds / 60).rounded(.up))
         if minutes < 1 { return "<1m" }

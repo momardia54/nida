@@ -11,6 +11,7 @@ enum StatusRenderer {
         var image: NSImage?
         var title: String
         var key: String          // changes only when the rendering changes
+        var ticksEverySecond = false
     }
 
     static let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
@@ -32,7 +33,9 @@ enum StatusRenderer {
             let left = Format.duration(w.remaining(at: now))
             let color = Urgency.nsColor(for: w, at: now)
             let hueKey = String(format: "%.2f", color.hueComponent)
-            let nextText = next.map { " \(nextName!) \(engine.timeString($0.start))" } ?? ""
+            let nextRemaining = next.map { $0.start.timeIntervalSince(now) } ?? .infinity
+            let nextSeconds = prefs.menuStyle == .time && prefs.menuBarShowsSeconds(remaining: nextRemaining)
+            let nextText = next.map { " \(nextName!) in \(Format.countdown($0.start.timeIntervalSince(now), showSeconds: nextSeconds))" } ?? ""
 
             if !prefs.colorize {
                 let text: String
@@ -42,7 +45,7 @@ enum StatusRenderer {
                 case .icon: text = ""
                 }
                 let img = symbol(isPlaying ? "speaker.wave.2.fill" : w.kind.symbol)
-                return Content(image: img, title: text, key: "plain|\(text)|\(isPlaying)")
+                return Content(image: img, title: text, key: "plain|\(text)|\(isPlaying)", ticksEverySecond: nextSeconds)
             }
 
             let pillText: String
@@ -54,18 +57,21 @@ enum StatusRenderer {
             let image = pill(text: pillText, color: color, playing: isPlaying)
             let title = prefs.menuStyle == .time ? nextText : ""
             return Content(image: image, title: title,
-                           key: "pill|\(pillText)|\(hueKey)|\(title)|\(isPlaying)|\(darkMenuBar)")
+                           key: "pill|\(pillText)|\(hueKey)|\(title)|\(isPlaying)|\(darkMenuBar)",
+                           ticksEverySecond: nextSeconds)
 
         case .waiting:
-            let until = Format.duration(w.start.timeIntervalSince(now))
+            let remaining = w.start.timeIntervalSince(now)
+            let seconds = prefs.menuStyle != .icon && prefs.menuBarShowsSeconds(remaining: remaining)
+            let until = Format.countdown(remaining, showSeconds: seconds)
             let text: String
             switch prefs.menuStyle {
-            case .time: text = " \(name) in \(until) · \(engine.timeString(w.start))"
+            case .time: text = " \(name) in \(until)"
             case .countdown: text = " \(name) in \(until)"
             case .icon: text = ""
             }
             let img = symbol(isPlaying ? "speaker.wave.2.fill" : w.kind.symbol)
-            return Content(image: img, title: text, key: "wait|\(text)|\(isPlaying)")
+            return Content(image: img, title: text, key: "wait|\(text)|\(isPlaying)", ticksEverySecond: seconds)
         }
     }
 

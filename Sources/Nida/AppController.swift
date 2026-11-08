@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-final class AppController: NSObject, ObservableObject {
+final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWindowDelegate {
     static let shared = AppController()
 
     let store = Store.shared
@@ -67,12 +67,25 @@ final class AppController: NSObject, ObservableObject {
     private var onboardingWindow: NSWindow?
     private var timer: Timer?
     private var lastStatusKey = ""
+    private var lastContent: StatusRenderer.Content?
     private var fired: [String: Date] = [:]
     private var lastBackgroundRefresh = Date.distantPast
     private var cancellables = Set<AnyCancellable>()
 
+    private var cachedEngine: PrayerEngine?
+
+    /// Reused while settings and location are unchanged, so its per-day cache survives.
     var engine: PrayerEngine? {
-        store.prefs.location.map { PrayerEngine(prefs: store.prefs, location: $0) }
+        guard let loc = store.prefs.location else { cachedEngine = nil; return nil }
+        if let e = cachedEngine, e.location == loc, e.prefs == store.prefs { return e }
+        let e = PrayerEngine(prefs: store.prefs, location: loc)
+        cachedEngine = e
+        return e
+    }
+
+    /// Only push per-second updates into SwiftUI while something is on screen.
+    private var uiVisible: Bool {
+        popover.isShown || settingsWindow?.isVisible == true || onboardingWindow?.isVisible == true
     }
 
     // MARK: Lifecycle
@@ -91,9 +104,7 @@ final class AppController: NSObject, ObservableObject {
 
         popover.behavior = .transient
         popover.animates = true
-        let host = NSHostingController(rootView: PopoverView(app: self, store: store, player: player))
-        host.sizingOptions = .preferredContentSize
-        popover.contentViewController = host
+        popover.delegate = self
 
         // Re-render as soon as settings or playback change.
         store.$prefs.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in self?.tick() }.store(in: &cancellables)
@@ -101,10 +112,6 @@ final class AppController: NSObject, ObservableObject {
             DispatchQueue.main.async { self?.tick() }
         }.store(in: &cancellables)
 
-        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.tick() }
-        t.tolerance = 0.2
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
 
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(self, selector: #selector(didWake), name: NSWorkspace.didWakeNotification, object: nil)
@@ -124,22 +131,48 @@ final class AppController: NSObject, ObservableObject {
 
     // MARK: Ticking
 
+    /// The current moment; `now` (published) only follows it while UI is visible.
+    private var clock = Date()
+
     private func tick() {
-        now = Date()
+        clock = Date()
+        if uiVisible { now = clock }
+        defer { scheduleNextTick() }
         guard let engine else {
-            phase = nil
+            if phase != nil { phase = nil }
             renderStatus()
             return
         }
-        phase = engine.phase(at: now)
+        let newPhase = engine.phase(at: clock)
+        if newPhase != phase { phase = newPhase }
         checkEvents(engine)
         renderStatus()
-        if store.prefs.followLocation && now.timeIntervalSince(lastBackgroundRefresh) > 3 * 3600 {
+        if store.prefs.followLocation && clock.timeIntervalSince(lastBackgroundRefresh) > 3 * 3600 {
             backgroundRefresh(force: false)
         }
     }
 
+    /// Whether anything currently needs per-second updates.
+    private var needsSeconds = false
+
+    /// Wakes up only as often as needed: every second while a countdown shows seconds, the popover
+    /// is open or audio plays; otherwise once a minute, exactly on the minute. Prayer times,
+    /// reminders and closing warnings all fall on whole minutes, so no alert can be missed.
+    private func scheduleNextTick() {
+        timer?.invalidate()
+        let fast = needsSeconds || uiVisible || player.isPlaying
+        let t = Date().timeIntervalSince1970
+        let next = fast ? t.rounded(.down) + 1 : (t / 60).rounded(.down) * 60 + 60
+        let timer = Timer(fire: Date(timeIntervalSince1970: next), interval: 0, repeats: false) { [weak self] _ in
+            self?.tick()
+        }
+        timer.tolerance = fast ? 0.05 : 0.3
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
     private func checkEvents(_ engine: PrayerEngine) {
+        let now = clock
         let prefs = store.prefs
         for w in engine.windows(around: now) {
             let alert = prefs.alert(for: w.kind)
@@ -157,7 +190,7 @@ final class AppController: NSObject, ObservableObject {
                 fire(type, window: w, engine: engine, alert: alert)
             }
         }
-        fired = fired.filter { now.timeIntervalSince($0.value) < 2 * 86400 }
+        if fired.count > 60 { fired = fired.filter { now.timeIntervalSince($0.value) < 2 * 86400 } }
     }
 
     private func fire(_ type: String, window w: PrayerWindow, engine: PrayerEngine, alert: PrayerAlert) {
@@ -196,9 +229,11 @@ final class AppController: NSObject, ObservableObject {
 
     private func renderStatus() {
         guard let button = statusItem?.button else { return }
+        defer { if let c = lastContent { needsSeconds = c.ticksEverySecond } }
         let dark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        let content = StatusRenderer.make(engine: engine, phase: phase, now: now, prefs: store.prefs,
+        let content = StatusRenderer.make(engine: engine, phase: phase, now: clock, prefs: store.prefs,
                                           isPlaying: player.isPlaying, darkMenuBar: dark)
+        lastContent = content
         guard content.key != lastStatusKey else { return }
         lastStatusKey = content.key
 
@@ -220,12 +255,33 @@ final class AppController: NSObject, ObservableObject {
 
     func showPopover() {
         guard let button = statusItem.button else { return }
+        now = Date()
+        if popover.contentViewController == nil {
+            let host = NSHostingController(rootView: PopoverView(app: self, store: store, player: player))
+            host.sizingOptions = .preferredContentSize
+            popover.contentViewController = host
+        }
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
+        scheduleNextTick() // switch to per-second updates while open
     }
 
     func closePopover() { popover.performClose(nil) }
+
+    /// Free the popover's views while it's closed.
+    func popoverDidClose(_ notification: Notification) {
+        popover.contentViewController = nil
+    }
+
+    /// Free settings/setup windows once closed; they're rebuilt on demand.
+    func windowWillClose(_ notification: Notification) {
+        guard let w = notification.object as? NSWindow else { return }
+        DispatchQueue.main.async {
+            if w === self.settingsWindow { self.settingsWindow = nil }
+            if w === self.onboardingWindow { self.onboardingWindow = nil }
+        }
+    }
 
     // MARK: Windows
 
@@ -238,6 +294,7 @@ final class AppController: NSObject, ObservableObject {
                                                                   state: SettingsState.shared))
             let w = NSWindow(contentViewController: host)
             w.title = "Nida Settings"
+            w.delegate = self
             w.styleMask = [.titled, .closable, .miniaturizable]
             w.isReleasedWhenClosed = false
             w.setContentSize(NSSize(width: 580, height: 640))
@@ -246,6 +303,7 @@ final class AppController: NSObject, ObservableObject {
         }
         NSApp.activate(ignoringOtherApps: true)
         settingsWindow?.makeKeyAndOrderFront(nil)
+        scheduleNextTick()
     }
 
     func showOnboarding() {
@@ -255,6 +313,7 @@ final class AppController: NSObject, ObservableObject {
                                                                     player: player, notifier: notifier))
             let w = NSWindow(contentViewController: host)
             w.title = store.prefs.onboarded ? "Nida Setup" : "Welcome to Nida"
+            w.delegate = self
             w.styleMask = [.titled, .closable, .fullSizeContentView]
             w.titlebarAppearsTransparent = true
             w.titleVisibility = .hidden
@@ -266,6 +325,7 @@ final class AppController: NSObject, ObservableObject {
         }
         NSApp.activate(ignoringOtherApps: true)
         onboardingWindow?.makeKeyAndOrderFront(nil)
+        scheduleNextTick()
     }
 
     func finishOnboarding(with prefs: Preferences) {
@@ -284,7 +344,7 @@ final class AppController: NSObject, ObservableObject {
 
     private func backgroundRefresh(force: Bool) {
         guard store.prefs.followLocation, location.isAuthorized else { return }
-        if !force && now.timeIntervalSince(lastBackgroundRefresh) < 600 { return }
+        if !force && clock.timeIntervalSince(lastBackgroundRefresh) < 600 { return }
         lastBackgroundRefresh = Date()
         location.refresh()
     }

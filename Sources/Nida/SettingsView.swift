@@ -51,6 +51,9 @@ private struct GeneralTab: View {
                 Picker("Show", selection: $store.prefs.menuStyle) {
                     ForEach(MenuStyle.allCases) { Text($0.label).tag($0) }
                 }
+                Picker("Count down in seconds", selection: $store.prefs.secondsMode) {
+                    ForEach(SecondsMode.allCases) { Text($0.label).tag($0) }
+                }
                 Toggle("Color the current prayer window", isOn: $store.prefs.colorize)
                 if store.prefs.colorize {
                     HStack(spacing: 10) {

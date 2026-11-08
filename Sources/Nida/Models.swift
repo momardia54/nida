@@ -120,6 +120,19 @@ enum MenuStyle: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum SecondsMode: String, Codable, CaseIterable, Identifiable {
+    case always, final, never
+    static let finalWindow: TimeInterval = 10 * 60
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .always: "Always"
+        case .final: "Final 10 minutes"
+        case .never: "Never"
+        }
+    }
+}
+
 enum IshaEnd: String, Codable, CaseIterable, Identifiable {
     case midnight, fajr
     var id: String { rawValue }
@@ -212,6 +225,17 @@ struct Preferences: Codable, Equatable {
 
     var menuStyle: MenuStyle = .time
     var colorize = true
+    /// When the menu bar countdown ticks in seconds. Each menu bar redraw costs CPU,
+    /// so by default seconds appear only in the final minutes before a prayer.
+    var secondsMode: SecondsMode = .final
+
+    func menuBarShowsSeconds(remaining: TimeInterval) -> Bool {
+        switch secondsMode {
+        case .always: true
+        case .final: remaining <= SecondsMode.finalWindow
+        case .never: false
+        }
+    }
 
     func alert(for kind: PrayerKind) -> PrayerAlert { alerts[kind.rawValue] ?? PrayerAlert() }
     mutating func setAlert(_ alert: PrayerAlert, for kind: PrayerKind) { alerts[kind.rawValue] = alert }

@@ -27,6 +27,18 @@ Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is
   nearest latitude where the sun still rises and sets.
 - Onboarding on first launch, Hijri date, launch at login.
 
+## Always current, very light
+
+- Times are never stored as a timetable. They're calculated on demand from today's date, your location and your
+  settings, cached for the day, and recalculated at midnight, at launch, on wake, on a time-zone change, and
+  whenever a setting or your location changes.
+- Footprint (measured on a Mac mini, macOS 27): **~17 MB** memory and **~0.06% CPU**, waking about once a
+  minute, exactly on the minute. Prayer times, reminders and closing warnings all fall on whole minutes, so
+  nothing is missed. It only switches to per-second updates while a countdown shows seconds, the popover or a
+  window is open, or audio is playing. The popover and windows are released from memory when closed.
+- Live seconds in the menu bar: **Final 10 minutes** (default), **Always** or **Never** (Settings › General).
+  Every menu bar redraw costs CPU (macOS redraws the item on each display), so "Always" uses about 2% CPU.
+
 ## Install and update
 
 Open `dist/Nida-<version>.dmg` and either drag **Nida** into **Applications**, or double-click Nida in the
