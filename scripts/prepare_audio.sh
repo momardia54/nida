@@ -9,15 +9,18 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$OUT"
 
-# id | url | title | credit
+# id | url | title | credit | noise reduction (dB)
 SOURCES=(
-  "adhan-classic|https://upload.wikimedia.org/wikipedia/commons/b/b0/Beautiful_adhan.ogg|Classic|\"Beautiful adhan\" by Adam-synagda, Wikimedia Commons, CC0"
-  "adhan-serene|https://upload.wikimedia.org/wikipedia/commons/8/86/Azan.ogg|Serene|\"Azan\" by Andrewler, Wikimedia Commons, CC BY-SA 4.0 (remastered)"
+  "adhan-classic|https://upload.wikimedia.org/wikipedia/commons/b/b0/Beautiful_adhan.ogg|Classic|\"Beautiful adhan\" by Adam-synagda, Wikimedia Commons, CC0|8"
+  "adhan-serene|https://upload.wikimedia.org/wikipedia/commons/8/86/Azan.ogg|Serene|\"Azan\" by Andrewler, Wikimedia Commons, CC BY-SA 4.0 (remastered)|8"
+  "adhan-madinah|https://upload.wikimedia.org/wikipedia/commons/7/7c/33937_ejaz215_call-to-prayer-from-the-prophet-s-mo.ogg|Madinah|\"Call to prayer from the Prophet's Mosque\" by ejaz215 (Freesound), CC BY 3.0 (remastered)|6"
+  "adhan-azeez|https://upload.wikimedia.org/wikipedia/commons/7/7d/The_Adhan_-_Muslim_Call_to_Prayer_-_Aaqib_Azeez.mp3|Aaqib Azeez|\"The Adhan\" by Aaqib Azeez, uploaded by Atcovi, Wikimedia Commons, CC BY-SA 4.0 (remastered)|14"
+  "adhan-westafrica|https://upload.wikimedia.org/wikipedia/commons/6/68/Call_to_prayer.ogg|West Africa|\"Call to prayer\" by Isaacayodele32, Wikimedia Commons, CC BY-SA 4.0 (remastered)|12"
 )
 
-master() { # in out title credit id
-  local in=$1 out=$2 title=$3 credit=$4 id=$5
-  local pre="highpass=f=70,afftdn=nf=-32:nr=8,silenceremove=start_periods=1:start_threshold=-45dB:stop_periods=1:stop_threshold=-45dB:stop_duration=1.5"
+master() { # in out title credit id noise-reduction
+  local in=$1 out=$2 title=$3 credit=$4 id=$5 nr=${6:-8}
+  local pre="highpass=f=70,afftdn=nf=-32:nr=$nr,silenceremove=start_periods=1:start_threshold=-45dB,areverse,silenceremove=start_periods=1:start_threshold=-45dB,areverse"
   # Pass 1: measure loudness
   local stats
   stats=$(ffmpeg -nostdin -hide_banner -i "$in" -af "$pre,loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json" -f null - 2>&1 | sed -n '/^{/,/^}/p')
@@ -53,10 +56,10 @@ print(json.dumps({"title": title, "credit": credit, "duration": round(dur, 2), "
 }
 
 for row in "${SOURCES[@]}"; do
-  IFS='|' read -r id url title credit <<<"$row"
+  IFS='|' read -r id url title credit nr <<<"$row"
   echo "Fetching ${title}…"
   curl -sfL -A "Nida-build/1.0" -o "$WORK/$id.src" "$url"
-  master "$WORK/$id.src" "$OUT/$id.m4a" "$title" "$credit" "$id"
+  master "$WORK/$id.src" "$OUT/$id.m4a" "$title" "$credit" "$id" "$nr"
 done
 
 echo "Synthesizing chime…"

@@ -56,7 +56,64 @@ enum Snapshot {
                                   startStep: step),
                    name: "onboarding-\(step)", dark: step == 4, out: out, size: NSSize(width: 520, height: 600))
         }
+        menuBarStrip(app: app, engine: engine, out: out)
         print("Snapshots written to \(out.path)")
+    }
+
+    /// Draws the status item content for several moments on fake light and dark menu bars.
+    private static func menuBarStrip(app: AppController, engine: PrayerEngine, out: URL) {
+        let w = engine.windows(for: Date())
+        let moments: [(Date, Preferences.Type?)] = [
+            (w[2].start.addingTimeInterval(w[2].duration * 0.1), nil),
+            (w[2].start.addingTimeInterval(w[2].duration * 0.6), nil),
+            (w[2].start.addingTimeInterval(w[2].duration * 0.95), nil),
+            (w[1].start.addingTimeInterval(-4500), nil),
+        ]
+        let rowH: CGFloat = 26, width: CGFloat = 420
+        var rows: [(StatusRenderer.Content, Bool, String)] = []
+        for dark in [false, true] {
+            for style in [MenuStyle.time, .countdown, .icon] {
+                for (date, _) in moments {
+                    var p = Store.shared.prefs
+                    p.menuStyle = style
+                    rows.append((StatusRenderer.make(engine: PrayerEngine(prefs: p, location: p.location!),
+                                                     phase: engine.phase(at: date), now: date, prefs: p,
+                                                     isPlaying: false, darkMenuBar: dark), dark, style.rawValue))
+                }
+            }
+        }
+        let img = NSImage(size: NSSize(width: width, height: rowH * CGFloat(rows.count)), flipped: true) { _ in
+            for (i, row) in rows.enumerated() {
+                let r = NSRect(x: 0, y: CGFloat(i) * rowH, width: width, height: rowH)
+                (row.1 ? NSColor(white: 0.12, alpha: 1) : NSColor(white: 0.93, alpha: 1)).setFill()
+                r.fill()
+                let ink: NSColor = row.1 ? .white : .black
+                var x: CGFloat = 12
+                if let im = row.0.image {
+                    let drawn = im.isTemplate ? tint(im, ink) : im
+                    drawn.draw(in: NSRect(x: x, y: r.midY - im.size.height / 2, width: im.size.width, height: im.size.height),
+                               from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
+                    x += im.size.width
+                }
+                let t = NSAttributedString(string: row.0.title, attributes: [.font: StatusRenderer.font, .foregroundColor: ink])
+                t.draw(at: NSPoint(x: x, y: r.midY - t.size().height / 2))
+                NSAttributedString(string: row.2, attributes: [.font: NSFont.systemFont(ofSize: 9), .foregroundColor: NSColor.gray])
+                    .draw(at: NSPoint(x: width - 60, y: r.minY + 8))
+            }
+            return true
+        }
+        if let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) {
+            try? rep.representation(using: .png, properties: [:])?.write(to: out.appendingPathComponent("menubar.png"))
+        }
+    }
+
+    private static func tint(_ image: NSImage, _ color: NSColor) -> NSImage {
+        NSImage(size: image.size, flipped: false) { r in
+            image.draw(in: r)
+            color.set()
+            r.fill(using: .sourceAtop)
+            return true
+        }
     }
 
     private static func render<V: View>(_ view: V, name: String, dark: Bool, out: URL, size: NSSize? = nil) {

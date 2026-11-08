@@ -113,9 +113,9 @@ enum MenuStyle: String, Codable, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String {
         switch self {
-        case .time: "Prayer and time"
-        case .countdown: "Countdown"
-        case .icon: "Icon only"
+        case .time: "Time left + next prayer"
+        case .countdown: "Time left only"
+        case .icon: "Color only"
         }
     }
 }

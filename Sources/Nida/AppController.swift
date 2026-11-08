@@ -196,51 +196,18 @@ final class AppController: NSObject, ObservableObject {
 
     private func renderStatus() {
         guard let button = statusItem?.button else { return }
-        let prefs = store.prefs
-        var text = ""
-        var color: NSColor?
-        var symbol = "moon.stars.fill"
+        let dark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let content = StatusRenderer.make(engine: engine, phase: phase, now: now, prefs: store.prefs,
+                                          isPlaying: player.isPlaying, darkMenuBar: dark)
+        guard content.key != lastStatusKey else { return }
+        lastStatusKey = content.key
 
-        if let engine, let phase {
-            let w = phase.window
-            let name = w.kind.displayName(on: w.start, calendar: engine.calendar)
-            symbol = w.kind.symbol
-            switch phase {
-            case .open:
-                if prefs.colorize { color = Urgency.nsColor(for: w, at: now) }
-                switch prefs.menuStyle {
-                case .time: text = "\(name) until \(engine.timeString(w.end))"
-                case .countdown: text = "\(name) · \(Format.duration(w.remaining(at: now))) left"
-                case .icon: text = ""
-                }
-            case .waiting:
-                switch prefs.menuStyle {
-                case .time: text = "\(name) \(engine.timeString(w.start))"
-                case .countdown: text = "\(name) in \(Format.duration(w.start.timeIntervalSince(now)))"
-                case .icon: text = ""
-                }
-            }
-        } else if store.prefs.location == nil {
-            text = prefs.onboarded ? "Set location" : "Nida"
-        }
-        if player.isPlaying { symbol = "speaker.wave.2.fill" }
-
-        let colorKey = color.map { String(format: "%.2f", $0.hueComponent) } ?? "-"
-        let key = "\(text)|\(colorKey)|\(symbol)"
-        guard key != lastStatusKey else { return }
-        lastStatusKey = key
-
-        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Nida")?.withSymbolConfiguration(config)
-        image?.isTemplate = true
-        button.image = image
-        button.contentTintColor = color
-        var attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular),
+        button.image = content.image
+        button.contentTintColor = nil
+        button.attributedTitle = NSAttributedString(string: content.title, attributes: [
+            .font: StatusRenderer.font,
             .baselineOffset: 0.5,
-        ]
-        if let color { attrs[.foregroundColor] = color }
-        button.attributedTitle = NSAttributedString(string: text.isEmpty ? "" : " \(text)", attributes: attrs)
+        ])
         button.toolTip = phase.map { p in
             let n = p.window.kind.name
             return p.isOpen ? "\(n) is open" : "Next: \(n)"

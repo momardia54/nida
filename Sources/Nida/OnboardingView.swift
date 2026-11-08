@@ -177,33 +177,35 @@ struct OnboardingView: View {
     private var adhanStep: some View {
         VStack(alignment: .leading, spacing: 14) {
             stepTitle("The adhan", "Choose a voice and when it plays. The others get a notification.")
-            ForEach(sounds.voices) { s in
-                HStack {
-                    Image(systemName: voice == s.id ? "largecircle.fill.circle" : "circle")
-                        .foregroundStyle(voice == s.id ? Color.accentColor : .secondary)
-                    VStack(alignment: .leading, spacing: 1) {
+            VStack(spacing: 4) {
+                ForEach(sounds.voices) { s in
+                    HStack(spacing: 10) {
+                        Image(systemName: voice == s.id ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(voice == s.id ? Color.accentColor : .secondary)
                         Text(s.title).font(.system(size: 13, weight: .medium))
-                        Text(String(format: "%d:%02d", Int(s.duration) / 60, Int(s.duration) % 60))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
-                    }
-                    Spacer()
-                    Button {
-                        if player.nowPlaying == "Preview" && voice == s.id { player.stop() } else {
-                            voice = s.id
-                            app.preview(s.id, length: length == .full ? .s30 : length)
+                        Text(String(format: "%d:%02d", Int(s.duration.rounded()) / 60, Int(s.duration.rounded()) % 60))
+                            .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            if player.playingSoundID == s.id { player.stop() } else {
+                                voice = s.id
+                                app.preview(s.id, length: length == .full ? .s30 : length, prefs: draft)
+                            }
+                        } label: {
+                            Image(systemName: player.playingSoundID == s.id ? "stop.circle.fill" : "play.circle.fill")
+                                .font(.system(size: 19))
                         }
-                    } label: {
-                        Image(systemName: player.nowPlaying == "Preview" && voice == s.id ? "stop.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 22))
+                        .buttonStyle(.borderless)
                     }
-                    .buttonStyle(.borderless)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture { voice = s.id }
+                    .background(RoundedRectangle(cornerRadius: 8)
+                        .fill(voice == s.id ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04)))
                 }
-                .padding(10)
-                .contentShape(Rectangle())
-                .onTapGesture { voice = s.id }
-                .background(RoundedRectangle(cornerRadius: 10)
-                    .fill(voice == s.id ? Color.accentColor.opacity(0.1) : Color.primary.opacity(0.04)))
             }
+            Text("You can add more voices any time in Settings › Adhan.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
 
             Text("Play the adhan for").font(.system(size: 12, weight: .medium)).padding(.top, 4)
             HStack(spacing: 6) {

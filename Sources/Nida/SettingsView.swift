@@ -283,6 +283,7 @@ private struct AdhanTab: View {
     @ObservedObject var sounds: SoundLibrary
     @ObservedObject var player: AdhanPlayer
     @ViewState private var importError: String?
+    @ViewState private var dropping = false
 
     var body: some View {
         Form {
@@ -306,33 +307,52 @@ private struct AdhanTab: View {
                 OutputSettingsView(prefs: $store.prefs, outputs: .shared, player: player, app: app)
             }
 
-            ForEach(PrayerKind.allCases) { kind in
-                PrayerAlertSection(kind: kind, app: app, store: store, sounds: sounds, player: player)
-            }
-
             Section {
-                ForEach(sounds.voices.filter { !$0.builtIn }) { s in
-                    HStack {
-                        Image(systemName: "waveform")
-                        Text(s.title)
-                        Spacer()
-                        Text(durationText(s.duration)).foregroundStyle(.secondary).monospacedDigit()
-                        Button(role: .destructive) { sounds.delete(s) } label: { Image(systemName: "trash") }
-                            .buttonStyle(.borderless)
-                    }
+                ForEach(sounds.voices) { voice in
+                    VoiceRow(sound: voice, sounds: sounds, player: player, app: app)
                 }
-                Button("Import adhan audio…", action: importSound)
+                HStack {
+                    Button("Import audio…", action: chooseFiles)
+                    Button("Find more voices…") {
+                        NSWorkspace.shared.open(URL(string: "https://www.assabile.com/adhan-call-prayer")!)
+                    }
+                    Spacer()
+                }
                 if let importError {
                     Text(importError).font(.system(size: 11)).foregroundStyle(.red)
                 }
             } header: {
-                Text("Your recordings")
+                Text("Voices")
             } footer: {
-                Text("Add any MP3, M4A, WAV or AIFF — for example a Fajr adhan with “aṣ-ṣalātu khayrun min an-nawm”, or your local mosque's muezzin.")
+                Text("Download adhans you like (Find more voices opens Assabile's collection), then drop the files anywhere on this page or use Import. Nida finds the phrases so shortened lengths stop cleanly, and evens out loud recordings. You can pick a different voice per prayer, e.g. a Fajr adhan with “aṣ-ṣalātu khayrun min an-nawm”.")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
+
+            ForEach(PrayerKind.allCases) { kind in
+                PrayerAlertSection(kind: kind, app: app, store: store, sounds: sounds, player: player)
+            }
+
         }
         .formStyle(.grouped)
+        .onDrop(of: [.fileURL], isTargeted: $dropping) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    if let url { DispatchQueue.main.async { importFiles([url]) } }
+                }
+            }
+            return true
+        }
+        .overlay {
+            if dropping {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(Color.accentColor, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.accentColor.opacity(0.08)))
+                    .overlay(Label("Drop to add adhan voices", systemImage: "square.and.arrow.down")
+                        .font(.system(size: 15, weight: .semibold)))
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func copyDhuhrToOthers() {
@@ -342,7 +362,7 @@ private struct AdhanTab: View {
         store.prefs = p
     }
 
-    private func importSound() {
+    private func chooseFiles() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.audio]
         panel.allowsMultipleSelection = true
@@ -350,10 +370,59 @@ private struct AdhanTab: View {
         panel.message = "Choose adhan recordings to add to Nida"
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK else { return }
+        importFiles(panel.urls)
+    }
+
+    private func importFiles(_ urls: [URL]) {
         importError = nil
-        for url in panel.urls {
-            do { try sounds.importSound(from: url) } catch {
-                importError = "Couldn't import \(url.lastPathComponent): not a playable audio file."
+        var failed: [String] = []
+        for url in urls {
+            do { try sounds.importSound(from: url) } catch { failed.append(url.lastPathComponent) }
+        }
+        if !failed.isEmpty {
+            importError = "Couldn't add \(failed.joined(separator: ", ")): not a playable audio file."
+        }
+    }
+}
+
+/// One voice: preview, name (editable for your own recordings), length, remove.
+private struct VoiceRow: View {
+    let sound: SoundInfo
+    @ObservedObject var sounds: SoundLibrary
+    @ObservedObject var player: AdhanPlayer
+    let app: AppController
+    @ViewState private var name = ""
+
+    private var isPlayingThis: Bool { player.isPlaying && player.playingSoundID == sound.id }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button {
+                if isPlayingThis { player.stop() } else { app.preview(sound.id, length: .s30) }
+            } label: {
+                Image(systemName: isPlayingThis ? "stop.circle.fill" : "play.circle.fill").font(.system(size: 18))
+            }
+            .buttonStyle(.borderless)
+            .help(isPlayingThis ? "Stop" : "Preview about 30 seconds")
+            VStack(alignment: .leading, spacing: 1) {
+                if sound.builtIn {
+                    Text(sound.title)
+                    Text(sound.credit).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    TextField("Name", text: $name)
+                        .textFieldStyle(.plain)
+                        .onSubmit { sounds.rename(sound, to: name) }
+                        .onAppear { name = sound.title }
+                    Text(sound.phraseBreaks.isEmpty ? "Your recording · analyzing…" : "Your recording · \(sound.phraseBreaks.count + 1) phrases")
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            Text(durationText(sound.duration)).foregroundStyle(.secondary).monospacedDigit()
+            if !sound.builtIn {
+                Button(role: .destructive) { sounds.delete(sound) } label: { Image(systemName: "trash") }
+                    .buttonStyle(.borderless)
+                    .help("Remove this voice")
             }
         }
     }

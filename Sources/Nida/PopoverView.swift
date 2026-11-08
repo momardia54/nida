@@ -166,6 +166,10 @@ struct PopoverView: View {
                     WindowBar(fraction: w.fractionRemaining(at: app.now), tint: tint)
                     Text(endLine(w, engine))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
+                    if let next = engine.windows(around: app.now).first(where: { $0.start > app.now }) {
+                        Text("Next: \(next.kind.displayName(on: next.start, calendar: engine.calendar)) at \(engine.timeString(next.start)) · in \(Format.duration(next.start.timeIntervalSince(app.now)))")
+                            .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                    }
                 } else {
                     Text("Begins at \(engine.timeString(w.start))")
                         .font(.system(size: 11)).foregroundStyle(.secondary)

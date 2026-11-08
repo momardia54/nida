@@ -29,6 +29,29 @@ if let i = args.firstIndex(of: "--times"), args.count >= i + 5,
 }
 
 #if DEBUG
+if let i = args.firstIndex(of: "--import-test"), args.count > i + 1 {
+    let lib = SoundLibrary.shared
+    do {
+        let s = try lib.importSound(from: URL(fileURLWithPath: args[i + 1]))
+        print("imported: \(s?.title ?? "?") id=\(s?.id ?? "?") dir=\(SoundLibrary.userDirectory.path)")
+        RunLoop.main.run(until: Date().addingTimeInterval(8))
+        if let again = lib.voices.first(where: { $0.id == s?.id }) {
+            print("after analysis: breaks=\(again.phraseBreaks.count) gain=\(String(format: "%.2f", again.gain)) 60s-stop=\(AdhanPlayer.stopPoint(for: again, length: .s60).map { String(format: "%.1f", $0) } ?? "-")")
+            lib.rename(again, to: "My Test Voice")
+            print("renamed: \(lib.voices.first(where: { $0.id == again.id })?.title ?? "?")")
+        }
+    } catch { print("import failed: \(error)") }
+    exit(0)
+}
+if let i = args.firstIndex(of: "--analyze") {
+    for path in args.dropFirst(i + 1) {
+        if let r = AudioAnalysis.analyze(URL(fileURLWithPath: path)) {
+            print(String(format: "%@  level %.1f dB  gain %.2f  breaks %d: %@", (path as NSString).lastPathComponent,
+                         r.activeLevel, r.gain, r.phraseBreaks.count, r.phraseBreaks.prefix(6).map { String(format: "%.1f", $0) }.joined(separator: ", ")))
+        }
+    }
+    exit(0)
+}
 // `Nida --route-test <deviceUID> <level>`: plays the chime on one output with the volume raised,
 // printing the device volume before, during and after.
 if let i = args.firstIndex(of: "--route-test"), args.count > i + 2, let level = Float(args[i + 2]) {

@@ -5,10 +5,13 @@ Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is
 
 ## Features
 
-- **Menu bar**: next prayer and time, a countdown, or just an icon. While a prayer's window is open the
-  item turns **green and drains through amber to red** as the window closes.
+- **Menu bar**: while a prayer's window is open, a colored pill shows it with the time left (green, through
+  amber, to red as it closes), followed by the next prayer and its time. Between windows: the next prayer
+  with a countdown. Compact and color-only styles too.
 - **Prayer windows**: Fajr→sunrise, Dhuhr→Asr, Asr→Maghrib, Maghrib→Isha, Isha→Islamic midnight (or Fajr).
-- **Adhan**: two mastered recordings plus a synthesized chime, or import your own. Each prayer is set up
+- **Adhan**: five mastered, freely licensed recordings plus a synthesized chime, or add your own: drop files on
+  Settings › Adhan, or use **Find more voices…** (opens Assabile's collection). Imported voices are analyzed
+  for phrase breaks and leveled to the built-in loudness, and can be renamed. Each prayer is set up
   separately: adhan / chime / notification only / off, voice, length (full, opening takbīr, ~30 s … ~2 min),
   and a reminder. Shortened adhans stop at a phrase boundary and fade out, so they never cut off mid-word.
 - **Output**: always play the adhan on a chosen speaker (e.g. the Mac's speakers while music goes to
@@ -84,4 +87,8 @@ SIGN_ID="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=nida-notar
 - "Serene" adhan: *Azan* by Andrewler, Wikimedia Commons,
   [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), remastered (filtered, denoised,
   loudness-normalized). The remastered file is shared under the same licence.
+- "Madinah" adhan: *Call to prayer from the Prophet's Mosque* by ejaz215 (Freesound, via Wikimedia Commons),
+  [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), remastered.
+- "Aaqib Azeez" adhan: *The Adhan* by Aaqib Azeez, uploaded by Atcovi, Wikimedia Commons, CC BY-SA 4.0, remastered.
+- "West Africa" adhan: *Call to prayer* by Isaacayodele32, Wikimedia Commons, CC BY-SA 4.0, remastered.
 - Chime: synthesized for Nida (`scripts/make_chime.py`).
