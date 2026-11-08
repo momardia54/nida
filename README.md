@@ -39,6 +39,10 @@ Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is
 - **Anywhere**: high-latitude rules are applied automatically. In polar day or night, times come from the
   nearest latitude where the sun still rises and sets.
 - Onboarding on first launch, Hijri date, launch at login.
+- **Sleep**: Nida never keeps your Mac awake by default. A sleeping Mac can't run any app, so prayers that fall
+  while it sleeps pass silently (no late adhans on wake). Turn on **Keep Mac awake for prayer alerts**
+  (Settings › General) to block idle system sleep only: the screen still turns off and locks, and Apple menu ›
+  Sleep still works.
 
   ![Setup: location, calculation method, adhan output](docs/screenshots/setup.png)
 
