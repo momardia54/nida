@@ -73,10 +73,32 @@ Optional, for distributing Nida (or a branded build) to clients under a Warden l
   so no "unidentified developer" warning on other Macs.
 - Homebrew cask (`brew install --cask nida`).
 - Real screenshots captured from the menu bar for the README.
+- README available in French and Arabic.
+
+## 1.8.0: multiple languages
+
+Nida follows the Mac's language (System Settings › General › Language & Region), with a per-app override in
+Settings › General.
+
+- **First languages: French and Arabic.**
+- **Then, by size of the Muslim population Nida serves:** Urdu, Indonesian, Turkish, Bengali, Malay, Persian,
+  Spanish and German.
+- **Right-to-left** layout for Arabic, Urdu and Persian: popover, settings, setup and the menu bar text, checked
+  with the README screenshots rendered in each language (`--readme` gains a language option).
+- **Everything translated**: menu bar text, popover, settings, setup, notifications, the "move" and
+  "convention" prompts, voice titles, error messages, and the DMG window text.
+- **Already localized by macOS** and kept that way: times, numbers (including Arabic-Indic digits) and Hijri
+  month names follow the chosen language through the system formatters.
+- **Prayer names**: the transliterated names (Fajr, Dhuhr…) stay as they are for languages written in Latin
+  script. Other languages use their own script (الفجر, فجر, ফজর…).
+- **How**: strings move to `Localizable.strings` files in `Resources/<lang>.lproj` with `defaultLocalization` in
+  `Package.swift`. This works with the Command Line Tools alone; String Catalogs (`.xcstrings`) would need full
+  Xcode to compile. A check in CI fails the build when a language is missing a string.
+- Translations reviewed by native speakers before each language ships. Religious terms and convention names are
+  reviewed carefully.
 
 ## Ideas, not scheduled
 
-- Localization: Arabic (right-to-left), French, Turkish, Indonesian, Urdu.
 - Ramadan mode: suhoor and iftar countdowns, Imsak time.
 - Islamic dates and events in the popover (Eid, Laylat al-Qadr, Ashura).
 - A desktop / Notification Center widget.
