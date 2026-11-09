@@ -72,6 +72,16 @@ private struct GeneralTab: View {
                     ForEach([10, 15, 20, 30, 45], id: \.self) { Text("\($0) minutes before").tag($0) }
                 }
             }
+            Section {
+                Picker("Mark current prayer as prayed", selection: $store.prefs.markShortcut) {
+                    ForEach(MarkShortcut.allCases) { Text($0.label).tag($0) }
+                }
+            } header: {
+                Text("Prayed")
+            } footer: {
+                Text("Works from any app. You can also ⌥-click the menu bar item, use the ✓ next to each prayer in the menu, or the Prayed button on the notification. Once marked, the menu bar moves on to the next prayer. Marks stay on this Mac.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             Section("System") {
                 Toggle("Open Nida at login", isOn: Binding(get: { app.launchAtLogin }, set: { app.launchAtLogin = $0 }))
                 VStack(alignment: .leading, spacing: 2) {
@@ -315,6 +325,8 @@ private struct AdhanTab: View {
                 OutputSettingsView(prefs: $store.prefs, outputs: .shared, player: player, app: app)
             }
 
+            QuietTimesSection(store: store, silence: .shared, app: app)
+
             Section {
                 ForEach(sounds.voices) { voice in
                     VoiceRow(sound: voice, sounds: sounds, player: player, app: app)
@@ -525,5 +537,45 @@ private struct AboutTab: View {
         }
         .padding(.top, 30)
         .frame(maxWidth: .infinity)
+    }
+}
+
+/// "Stay silent during Focus" and its permission status.
+private struct QuietTimesSection: View {
+    @ObservedObject var store: Store
+    @ObservedObject var silence: SilenceMonitor
+    let app: AppController
+
+    var body: some View {
+        Section {
+            Toggle("Stay silent during Focus and Do Not Disturb", isOn: $store.prefs.respectSilence)
+            if store.prefs.respectSilence {
+                HStack {
+                    Text("Focus status")
+                    Spacer()
+                    if silence.focusAuthorized {
+                        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    } else {
+                        Button("Allow…") {
+                            silence.requestFocusAccess { granted in
+                                if !granted, let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Focus") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                            }
+                        }
+                    }
+                    Button("Try it") { app.startJiggle(note: "This is how Nida signals a prayer while your Mac is quiet. Click to stop.", duration: 20) }
+                }
+            }
+        } header: {
+            Text("Quiet times")
+        } footer: {
+            Text(store.prefs.respectSilence
+                 ? "While a Focus is on or your sound is muted, the adhan and chime don't play. The Nida item in the menu bar jiggles instead until you click it. Banners follow your Focus settings as usual."
+                 : "The adhan plays at prayer time even during a Focus or Do Not Disturb.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onAppear { silence.refreshAuthorization() }
     }
 }

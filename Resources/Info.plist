@@ -28,6 +28,8 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSFocusStatusUsageDescription</key>
+	<string>Nida checks whether a Focus such as Do Not Disturb is on, so the adhan stays silent and the menu bar item jiggles instead.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>

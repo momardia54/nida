@@ -1,6 +1,7 @@
 import AppKit
 import CoreLocation
 import UserNotifications
+import Intents
 
 // MARK: - Notifications
 
@@ -10,10 +11,13 @@ enum NotificationAction {
     static let moveKeep = "MOVE_KEEP"
     static let conventionAccept = "CONV_ACCEPT"
     static let conventionKeep = "CONV_KEEP"
+    static let prayed = "MARK_PRAYED"
 }
 
 enum NotificationCategory {
     static let prayer = "PRAYER"
+    /// Before a prayer begins: nothing to stop or mark yet.
+    static let reminder = "REMINDER"
     static let move = "MOVE"
     static let convention = "CONVENTION"
 }
@@ -22,8 +26,8 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
     static let shared = Notifier()
 
     @Published private(set) var authorized = false
-    /// Called on the main thread with (action identifier, category).
-    var onAction: ((String, String) -> Void)?
+    /// Called on the main thread with (action identifier, category, notification identifier).
+    var onAction: ((String, String, String) -> Void)?
 
     private var center: UNUserNotificationCenter { .current() }
     /// UNUserNotificationCenter throws outside an app bundle (e.g. the bare debug binary).
@@ -37,8 +41,10 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
         let keep = UNNotificationAction(identifier: NotificationAction.moveKeep, title: "Keep current", options: [])
         let convAccept = UNNotificationAction(identifier: NotificationAction.conventionAccept, title: "Switch", options: [])
         let convKeep = UNNotificationAction(identifier: NotificationAction.conventionKeep, title: "Keep mine", options: [])
+        let prayed = UNNotificationAction(identifier: NotificationAction.prayed, title: "Prayed ✓", options: [])
         center.setNotificationCategories([
-            UNNotificationCategory(identifier: NotificationCategory.prayer, actions: [stop], intentIdentifiers: []),
+            UNNotificationCategory(identifier: NotificationCategory.prayer, actions: [prayed, stop], intentIdentifiers: []),
+            UNNotificationCategory(identifier: NotificationCategory.reminder, actions: [], intentIdentifiers: []),
             UNNotificationCategory(identifier: NotificationCategory.move, actions: [accept, keep], intentIdentifiers: []),
             UNNotificationCategory(identifier: NotificationCategory.convention, actions: [convAccept, convKeep], intentIdentifiers: []),
         ])
@@ -92,7 +98,8 @@ final class Notifier: NSObject, ObservableObject, UNUserNotificationCenterDelega
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         let action = response.actionIdentifier
         let category = response.notification.request.content.categoryIdentifier
-        DispatchQueue.main.async { self.onAction?(action, category) }
+        let id = response.notification.request.identifier
+        DispatchQueue.main.async { self.onAction?(action, category, id) }
         completionHandler()
     }
 }
@@ -225,5 +232,66 @@ final class LocationService: NSObject, ObservableObject, CLLocationManagerDelega
             self.fail(NSError(domain: "Nida", code: 2, userInfo: [NSLocalizedDescriptionKey:
                 "Couldn't determine your location. Check Wi-Fi is on, or search for your city instead."]))
         }
+    }
+}
+
+// MARK: - Quiet times (Focus, Do Not Disturb, muted output)
+
+
+/// Tells whether the Mac is meant to be quiet right now: a Focus (including Do Not Disturb) is on,
+/// or the output the adhan would play on is muted.
+final class SilenceMonitor: ObservableObject {
+    static let shared = SilenceMonitor()
+
+    enum Reason: Equatable {
+        case focus, muted
+        var label: String {
+            switch self {
+            case .focus: "Focus is on"
+            case .muted: "the sound is muted"
+            }
+        }
+    }
+
+    @Published private(set) var focusAuthorized = false
+
+    private var focusCenter: INFocusStatusCenter { .default }
+    /// INFocusStatusCenter needs an app bundle (like notifications).
+    private var available: Bool { Bundle.main.bundleIdentifier != nil }
+
+    init() { refreshAuthorization() }
+
+    func refreshAuthorization() {
+        guard available else { return }
+        focusAuthorized = focusCenter.authorizationStatus == .authorized
+    }
+
+    /// Asks once; macOS remembers the answer (Settings › Privacy & Security › Focus).
+    func requestFocusAccess(_ done: ((Bool) -> Void)? = nil) {
+        guard available else { done?(false); return }
+        focusCenter.requestAuthorization { status in
+            DispatchQueue.main.async {
+                self.focusAuthorized = status == .authorized
+                done?(self.focusAuthorized)
+            }
+        }
+    }
+
+    /// Whether any Focus is on, or nil when Nida isn't allowed to know.
+    var isFocused: Bool? {
+        guard available, focusCenter.authorizationStatus == .authorized else { return nil }
+        return focusCenter.focusStatus.isFocused
+    }
+
+    /// Why the adhan should stay quiet on this output right now, or nil to play it.
+    func reason(outputUID: String?) -> Reason? {
+        if isFocused == true { return .focus }
+        let outputs = AudioOutputs.shared
+        outputs.reload()
+        if let target = outputs.device(uid: outputUID) ?? outputs.defaultDevice {
+            if AudioOutputs.isMuted(target.deviceID) == true { return .muted }
+            if let v = AudioOutputs.volume(of: target.deviceID), v < 0.01 { return .muted }
+        }
+        return nil
     }
 }

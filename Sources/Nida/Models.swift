@@ -156,6 +156,25 @@ enum MoveBehavior: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Mark as prayed shortcut
+
+/// A few safe global shortcuts to choose from (no recorder needed, and none clash with common apps).
+enum MarkShortcut: String, Codable, CaseIterable, Identifiable {
+    case off, ctrlOptP, ctrlOptCmdP, ctrlShiftP, optShiftP
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .off: "Off"
+        case .ctrlOptP: "⌃⌥P"
+        case .ctrlOptCmdP: "⌃⌥⌘P"
+        case .ctrlShiftP: "⌃⇧P"
+        case .optShiftP: "⌥⇧P"
+        }
+    }
+}
+
 // MARK: - Location
 
 struct SavedLocation: Codable, Equatable, Identifiable {
@@ -225,6 +244,11 @@ struct Preferences: Codable, Equatable {
     /// Opt-in: keep the Mac from idle-sleeping so alerts fire on time. The screen still turns off
     /// and locks on schedule; only system sleep (where no app can run) is blocked.
     var stayAwakeForPrayers = false
+    /// During a Focus (Do Not Disturb included) or while the output is muted, don't play the adhan
+    /// or chime: the menu bar item jiggles instead until clicked.
+    var respectSilence = true
+    /// Global keyboard shortcut that marks the current prayer as prayed (off by default).
+    var markShortcut: MarkShortcut = .off
 
     var menuStyle: MenuStyle = .time
     var colorize = true
@@ -260,8 +284,37 @@ final class Store: ObservableObject {
     @Published var pendingMove: SavedLocation?
     /// A convention suggested for a new country while the user has a manual convention.
     @Published var pendingConvention: String?
+    /// Prayers marked as prayed, by `Store.prayedKey` → when they were marked. Kept on this Mac only.
+    @Published private(set) var prayed: [String: Date] = [:]
+    private static let prayedStorageKey = "prayed.v1"
 
-    private init() { prefs = Self.load() }
+    private init() {
+        prefs = Self.load()
+        if Self.persist, let data = UserDefaults.standard.data(forKey: Self.prayedStorageKey),
+           let log = try? JSONDecoder().decode([String: Date].self, from: data) {
+            prayed = log
+        }
+    }
+
+    /// One key per prayer per day, e.g. "2026-11-09|asr". Stable when offsets or the convention change.
+    static func prayedKey(_ w: PrayerWindow, calendar: Calendar) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: w.start)
+        return String(format: "%04d-%02d-%02d|%@", c.year ?? 0, c.month ?? 0, c.day ?? 0, w.kind.rawValue)
+    }
+
+    func isPrayed(_ w: PrayerWindow, calendar: Calendar) -> Bool {
+        prayed[Self.prayedKey(w, calendar: calendar)] != nil
+    }
+
+    func setPrayed(_ on: Bool, _ w: PrayerWindow, calendar: Calendar) {
+        let key = Self.prayedKey(w, calendar: calendar)
+        if on { prayed[key] = Date() } else { prayed[key] = nil }
+        // Keep about a year of history.
+        let cutoff = Date().addingTimeInterval(-400 * 86400)
+        if prayed.count > 2200 { prayed = prayed.filter { $0.value > cutoff } }
+        guard Self.persist, let data = try? JSONEncoder().encode(prayed) else { return }
+        UserDefaults.standard.set(data, forKey: Self.prayedStorageKey)
+    }
 
     /// Off in snapshot mode so rendering sample data never touches real preferences.
     static var persist = true

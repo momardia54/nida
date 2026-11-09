@@ -11,10 +11,11 @@ Two rules apply to everything below:
   Anything new that contacts a server is explained in the app, can be turned off, and sends no location or
   personal data.
 
-## Current: 1.3.1
+## Current: 1.4.0
 
-Live countdown, minimal CPU and memory, README screenshots, tag-triggered release workflow (not yet run on
-GitHub).
+Quiet times: during a Focus (Do Not Disturb included) or with the output muted, the adhan stays silent and the
+menu bar item jiggles instead. Mark prayers as prayed (✓ in the menu, ⌥-click, notification action, optional
+global shortcut); the menu bar then moves on to the next prayer.
 
 ## 1.3.1: first real release run
 
@@ -22,7 +23,7 @@ GitHub).
   runner. Fix whatever the first run exposes (runner Xcode version, `hdiutil`, Finder layout step).
 - Add a `CHANGELOG.md` and use it for release notes.
 
-## 1.4.0: dependency watching and CI
+## 1.5.0: dependency watching and CI
 
 - **Dependabot** (`.github/dependabot.yml`):
   - `swift` ecosystem: weekly checks for `adhan-swift`, the prayer-time library everything depends on.
@@ -35,7 +36,7 @@ GitHub).
   that shifts any time by more than a minute fails CI instead of shipping.
 - GitHub security alerts and secret scanning enabled on the repository.
 
-## 1.5.0: automatic updates through Warden
+## 1.6.0: automatic updates through Warden
 
 Nida checks for new versions itself and installs them in one click, using Warden as the release server
 instead of a third-party update framework.
@@ -51,13 +52,13 @@ instead of a third-party update framework.
   as the running app) before installing. Then reuse the existing install/update path from `Installer.swift`:
   quit, replace, relaunch, settings kept.
 - Fallback: if Warden can't be reached, nothing breaks; Nida keeps working and tries again later.
-- Requires Developer ID signing to be meaningful (see 1.7.0); with ad-hoc builds, the update is offered but the
+- Requires Developer ID signing to be meaningful (see 1.8.0); with ad-hoc builds, the update is offered but the
   signature check is limited to the checksum.
 
 Open questions to settle before building: what Nida sends in place of `domain` (Warden checks are per site; a
 Mac app needs a random per-install ID or a dedicated app check), and whether beta is opt-in only.
 
-## 1.6.0: Warden licence support
+## 1.7.0: Warden licence support
 
 Optional, for distributing Nida (or a branded build) to clients under a Warden licence.
 
@@ -67,7 +68,7 @@ Optional, for distributing Nida (or a branded build) to clients under a Warden l
 - Build-time switch: the public build stays free with no licence prompt; licensed builds turn it on.
 - Decide first: does the free public build stay licence-free for good? (Recommended: yes.)
 
-## 1.7.0: trusted distribution
+## 1.8.0: trusted distribution
 
 - Developer ID signing and notarization in the release workflow (secrets are already documented in the README),
   so no "unidentified developer" warning on other Macs.
@@ -75,7 +76,7 @@ Optional, for distributing Nida (or a branded build) to clients under a Warden l
 - Real screenshots captured from the menu bar for the README.
 - README available in French and Arabic.
 
-## 1.8.0: multiple languages
+## 1.9.0: multiple languages
 
 Nida follows the Mac's language (System Settings › General › Language & Region), with a per-app override in
 Settings › General.

@@ -57,6 +57,7 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
     let sounds = SoundLibrary.shared
     let notifier = Notifier.shared
     let location = LocationService.shared
+    let silence = SilenceMonitor.shared
 
     @Published private(set) var now = Date()
     @Published private(set) var phase: PrayerPhase?
@@ -95,7 +96,10 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
 
     func start() {
         notifier.setUp()
-        notifier.onAction = { [weak self] action, category in self?.handleNotificationAction(action, category: category) }
+        notifier.onAction = { [weak self] action, category, id in
+            self?.handleNotificationAction(action, category: category, id: id)
+        }
+        HotKey.shared.onPress = { [weak self] in self?.markCurrentPrayed(feedback: true) }
         location.onBackgroundLocation = { [weak self] loc in self?.handleDetected(loc) }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -113,6 +117,16 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
         store.$prefs.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in self?.tick() }.store(in: &cancellables)
         store.$prefs.map(\.stayAwakeForPrayers).removeDuplicates().receive(on: RunLoop.main)
             .sink { [weak self] on in self?.setStayAwake(on) }.store(in: &cancellables)
+        store.$prefs.map(\.markShortcut).removeDuplicates().receive(on: RunLoop.main)
+            .sink { HotKey.shared.set($0) }.store(in: &cancellables)
+        store.$prayed.dropFirst().receive(on: RunLoop.main)
+            .sink { [weak self] _ in DispatchQueue.main.async { self?.tick() } }.store(in: &cancellables)
+        // Knowing whether a Focus is on needs the user's permission; ask while the option is on.
+        store.$prefs.map(\.respectSilence).removeDuplicates().receive(on: RunLoop.main)
+            .sink { [weak self] on in
+                guard let self, on, self.store.prefs.onboarded, !self.silence.focusAuthorized else { return }
+                self.silence.requestFocusAccess()
+            }.store(in: &cancellables)
         player.$nowPlaying.receive(on: RunLoop.main).sink { [weak self] _ in
             DispatchQueue.main.async { self?.tick() }
         }.store(in: &cancellables)
@@ -207,6 +221,11 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
             notifier.post(id: "\(w.id)-start", title: "\(name) · \(arabic)",
                           body: "It's time for \(name). \(endName.capitalizedFirst) at \(engine.timeString(w.end)).",
                           category: NotificationCategory.prayer, playSound: alert.style == .banner)
+            if alert.style == .adhan || alert.style == .chime, store.prefs.respectSilence,
+               let reason = silence.reason(outputUID: store.prefs.outputUID) {
+                startJiggle(note: "\(name) began. The adhan stayed silent because \(reason.label).")
+                return
+            }
             switch alert.style {
             case .adhan:
                 if let s = sounds.sound(alert.soundID) {
@@ -220,8 +239,9 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
         case "remind":
             notifier.post(id: "\(w.id)-remind", title: "\(name) in \(alert.reminderMinutes) min",
                           body: "\(name) begins at \(engine.timeString(w.start)).",
-                          category: NotificationCategory.prayer, playSound: true)
+                          category: NotificationCategory.reminder, playSound: true)
         case "closing":
+            guard !store.isPrayed(w, calendar: engine.calendar) else { return }
             notifier.post(id: "\(w.id)-closing", title: "\(name) ends in \(store.prefs.closingWarning) min",
                           body: "Pray \(name) before \(engine.timeString(w.end)).",
                           category: NotificationCategory.prayer, playSound: true)
@@ -237,7 +257,8 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
         defer { if let c = lastContent { needsSeconds = c.ticksEverySecond } }
         let dark = button.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let content = StatusRenderer.make(engine: engine, phase: phase, now: clock, prefs: store.prefs,
-                                          isPlaying: player.isPlaying, darkMenuBar: dark)
+                                          isPlaying: player.isPlaying, darkMenuBar: dark,
+                                          prayed: currentWindow.map(isPrayed) ?? false)
         lastContent = content
         guard content.key != lastStatusKey else { return }
         lastStatusKey = content.key
@@ -248,13 +269,116 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
             .font: StatusRenderer.font,
             .baselineOffset: 0.5,
         ])
-        button.toolTip = phase.map { p in
+        button.toolTip = jiggleNote ?? phase.map { p in
             let n = p.window.kind.name
-            return p.isOpen ? "\(n) is open" : "Next: \(n)"
+            if p.isOpen && isPrayed(p.window) { return "\(n) prayed ✓ (⌥-click to undo)" }
+            return p.isOpen ? "\(n) is open · ⌥-click to mark as prayed" : "Next: \(n)"
         }
     }
 
+    // MARK: Silent alert (jiggle)
+
+    private var jiggleTimer: Timer?
+    private var jiggleUntil = Date.distantPast
+    /// Shown as the tooltip while the item jiggles.
+    private var jiggleNote: String?
+
+    /// Replaces the adhan while the Mac is meant to be quiet: the menu bar item shakes in short bursts
+    /// until it's clicked, or for at most 10 minutes. A burst every 4 s keeps it cheap.
+    func startJiggle(note: String, duration: TimeInterval = 600) {
+        guard let button = statusItem?.button else { return }
+        stopJiggle()
+        jiggleNote = note
+        jiggleUntil = Date().addingTimeInterval(duration)
+        button.toolTip = note
+        button.wantsLayer = true
+        jiggleBurst()
+        let t = Timer(timeInterval: 4, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            if Date() >= self.jiggleUntil { self.stopJiggle() } else { self.jiggleBurst() }
+        }
+        t.tolerance = 0.5
+        RunLoop.main.add(t, forMode: .common)
+        jiggleTimer = t
+    }
+
+    func stopJiggle() {
+        jiggleTimer?.invalidate()
+        jiggleTimer = nil
+        guard jiggleNote != nil else { return }
+        jiggleNote = nil
+        statusItem?.button?.layer?.removeAnimation(forKey: "jiggle")
+        lastStatusKey = "" // restore the usual tooltip
+        renderStatus()
+    }
+
+    var isJiggling: Bool { jiggleNote != nil }
+
+    private func jiggleBurst() {
+        guard let layer = statusItem?.button?.layer else { return }
+        let shake = CAKeyframeAnimation(keyPath: "transform.translation.x")
+        shake.values = [0, -5, 5, -4, 4, -2.5, 2.5, -1, 0]
+        shake.duration = 0.7
+        shake.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        // Two shakes, a beat apart.
+        let group = CAAnimationGroup()
+        let second = shake.copy() as! CAKeyframeAnimation
+        second.beginTime = 0.95
+        group.animations = [shake, second]
+        group.duration = 1.65
+        layer.add(group, forKey: "jiggle")
+    }
+
+    // MARK: Prayed
+
+    /// The prayer whose window is open right now, if any.
+    var currentWindow: PrayerWindow? {
+        guard let phase, phase.isOpen else { return nil }
+        return phase.window
+    }
+
+    func isPrayed(_ w: PrayerWindow) -> Bool {
+        guard let engine else { return false }
+        return store.isPrayed(w, calendar: engine.calendar)
+    }
+
+    /// Marks (or unmarks) a prayer. Marking also stops its adhan or jiggle.
+    func setPrayed(_ on: Bool, _ w: PrayerWindow) {
+        guard let engine, w.start <= Date() else { return } // can't pray before it begins
+        store.setPrayed(on, w, calendar: engine.calendar)
+        if on {
+            if player.isPlaying && player.nowPlaying != "Preview" { player.stop() }
+            stopJiggle()
+        }
+    }
+
+    /// From the keyboard shortcut or ⌥-click: toggles the current prayer.
+    func markCurrentPrayed(feedback: Bool) {
+        guard let w = currentWindow else {
+            if feedback { NSSound.beep() }
+            return
+        }
+        setPrayed(!isPrayed(w), w)
+        if feedback { pop() }
+    }
+
+    /// A quick bounce of the menu bar item to confirm a mark made without looking.
+    private func pop() {
+        guard let button = statusItem?.button else { return }
+        button.wantsLayer = true
+        let a = CAKeyframeAnimation(keyPath: "transform.translation.y")
+        a.values = [0, -3, 0, -1.5, 0]
+        a.duration = 0.45
+        a.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        button.layer?.add(a, forKey: "pop")
+    }
+
     @objc private func statusClicked() {
+        stopJiggle()
+        if NSApp.currentEvent?.modifierFlags.contains(.option) == true {
+            markCurrentPrayed(feedback: true)
+            return
+        }
         if popover.isShown { popover.performClose(nil) } else { showPopover() }
     }
 
@@ -342,6 +466,7 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
         if p.followLocation { location.startMonitoringMoves() } else { location.stopMonitoringMoves() }
         lastBackgroundRefresh = Date()
         tick()
+        if p.respectSilence && !silence.focusAuthorized { silence.requestFocusAccess() }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { self.showPopover() }
     }
 
@@ -457,16 +582,22 @@ final class AppController: NSObject, ObservableObject, NSPopoverDelegate, NSWind
 
     func dismissPendingConvention() { store.pendingConvention = nil }
 
-    private func handleNotificationAction(_ action: String, category: String) {
+    private func handleNotificationAction(_ action: String, category: String, id: String) {
         switch action {
-        case NotificationAction.stop: player.stop()
+        case NotificationAction.prayed:
+            // Identifiers look like "<window id>-start" / "<window id>-closing".
+            let windowID = id.components(separatedBy: "-").prefix(2).joined(separator: "-")
+            if let engine, let w = engine.windows(around: clock).first(where: { $0.id == windowID }) ?? currentWindow {
+                setPrayed(true, w)
+            }
+        case NotificationAction.stop: player.stop(); stopJiggle()
         case NotificationAction.moveAccept: acceptPendingMove()
         case NotificationAction.moveKeep: dismissPendingMove()
         case NotificationAction.conventionAccept: acceptPendingConvention()
         case NotificationAction.conventionKeep: dismissPendingConvention()
         default:
             // Tapping a prayer banner acknowledges it: stop the adhan.
-            if category == NotificationCategory.prayer { player.stop() } else { showPopover() }
+            if category == NotificationCategory.prayer { player.stop(); stopJiggle() } else { showPopover() }
         }
     }
 

@@ -135,10 +135,11 @@ struct PopoverView: View {
             let w = phase.window
             let name = w.kind.displayName(on: w.start, calendar: engine.calendar)
             let arabic = w.kind.displayArabic(on: w.start, calendar: engine.calendar)
-            let tint: Color = phase.isOpen && store.prefs.colorize ? Urgency.color(for: w, at: app.now) : .secondary
+            let prayed = phase.isOpen && app.isPrayed(w)
+            let tint: Color = phase.isOpen && store.prefs.colorize && !prayed ? Urgency.color(for: w, at: app.now) : .secondary
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text(phase.isOpen ? "NOW" : "NEXT")
+                    Text(prayed ? "PRAYED" : (phase.isOpen ? "NOW" : "NEXT"))
                         .font(.system(size: 10, weight: .bold))
                         .tracking(1.2)
                         .foregroundStyle(tint)
@@ -164,8 +165,21 @@ struct PopoverView: View {
                 }
                 if phase.isOpen {
                     WindowBar(fraction: w.fractionRemaining(at: app.now), tint: tint)
-                    Text(endLine(w, engine))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(endLine(w, engine))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            app.setPrayed(!prayed, w)
+                        } label: {
+                            Label(prayed ? "Prayed" : "Mark as prayed",
+                                  systemImage: prayed ? "checkmark.circle.fill" : "checkmark.circle")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(prayed ? Color.green : Color.accentColor)
+                        .help(prayed ? "Click to undo" : "⌥-click the menu bar item, or use your shortcut, to mark it from anywhere")
+                    }
                     if let next = engine.windows(around: app.now).first(where: { $0.start > app.now }) {
                         Text("Next: \(next.kind.displayName(on: next.start, calendar: engine.calendar)) in \(Format.countdown(next.start.timeIntervalSince(app.now), showSeconds: true)) · at \(engine.timeString(next.start))")
                             .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
@@ -208,8 +222,10 @@ struct PopoverView: View {
         let isOpen = w.contains(app.now)
         let isNext = app.phase.map { !$0.isOpen && $0.window == w } ?? false
         let isPast = w.end <= app.now
-        let tint: Color = isOpen && store.prefs.colorize ? Urgency.color(for: w, at: app.now) : .accentColor
+        let prayed = app.isPrayed(w)
+        let tint: Color = prayed ? .gray : (isOpen && store.prefs.colorize ? Urgency.color(for: w, at: app.now) : .accentColor)
         let alert = store.prefs.alert(for: w.kind)
+        let started = w.start <= app.now
         return HStack(spacing: 10) {
             Circle()
                 .fill(isOpen ? tint : (isNext ? Color.accentColor.opacity(0.7) : Color.clear))
@@ -223,6 +239,18 @@ struct PopoverView: View {
             Spacer()
             Text(engine.timeString(w.start))
                 .font(.system(size: 13, weight: isOpen || isNext ? .semibold : .regular).monospacedDigit())
+            if started {
+                Button { app.setPrayed(!prayed, w) } label: {
+                    Image(systemName: prayed ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 12))
+                        .frame(width: 18)
+                        .foregroundStyle(prayed ? AnyShapeStyle(Color.green) : AnyShapeStyle(.tertiary))
+                }
+                .buttonStyle(.borderless)
+                .help(prayed ? "Prayed — click to undo" : "Mark as prayed")
+            } else {
+                Color.clear.frame(width: 18, height: 1)
+            }
             Button {
                 var p = store.prefs
                 var a = alert
@@ -253,6 +281,7 @@ struct PopoverView: View {
             Text("Sunrise").font(.system(size: 12))
             Spacer()
             Text(engine.timeString(sunrise)).font(.system(size: 12).monospacedDigit())
+            Color.clear.frame(width: 18, height: 1)
             Color.clear.frame(width: 18, height: 1)
         }
         .foregroundStyle(.tertiary)

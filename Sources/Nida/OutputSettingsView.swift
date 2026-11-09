@@ -44,7 +44,9 @@ struct OutputSettingsView: View {
                             .monospacedDigit()
                             .frame(width: 40, alignment: .trailing)
                     }
-                    note("Unmutes the output if needed. Your volume is put back when the adhan ends, unless you changed it yourself meanwhile.",
+                    note(prefs.respectSilence
+                         ? "Your volume is put back when the adhan ends, unless you changed it yourself meanwhile. A muted output stays muted (see Quiet times)."
+                         : "Unmutes the output if needed. Your volume is put back when the adhan ends, unless you changed it yourself meanwhile.",
                          icon: "arrow.uturn.backward")
                 }
             }

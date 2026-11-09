@@ -18,7 +18,7 @@ enum StatusRenderer {
     private static let pillFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
 
     static func make(engine: PrayerEngine?, phase: PrayerPhase?, now: Date, prefs: Preferences,
-                     isPlaying: Bool, darkMenuBar: Bool) -> Content {
+                     isPlaying: Bool, darkMenuBar: Bool, prayed: Bool = false) -> Content {
         guard let engine, let phase else {
             let text = prefs.location == nil ? (prefs.onboarded ? "Set location" : "Nida") : "Nida"
             return Content(image: symbol("moon.stars.fill"), title: " \(text)", key: "none|\(text)")
@@ -27,6 +27,18 @@ enum StatusRenderer {
         let name = w.kind.displayName(on: w.start, calendar: engine.calendar)
         let next = engine.windows(around: now).first { $0.start > now && $0 != w }
         let nextName = next.map { $0.kind.displayName(on: $0.start, calendar: engine.calendar) }
+
+        // Once the open prayer is marked as prayed, its countdown no longer matters: show the next one.
+        if phase.isOpen && prayed {
+            let symbolName = isPlaying ? "speaker.wave.2.fill" : "checkmark.circle.fill"
+            guard let next, let nextName else {
+                return Content(image: symbol(symbolName), title: "", key: "prayed|none|\(isPlaying)")
+            }
+            let remaining = next.start.timeIntervalSince(now)
+            let seconds = prefs.menuStyle != .icon && prefs.menuBarShowsSeconds(remaining: remaining)
+            let text = prefs.menuStyle == .icon ? "" : " \(nextName) in \(Format.countdown(remaining, showSeconds: seconds))"
+            return Content(image: symbol(symbolName), title: text, key: "prayed|\(text)|\(isPlaying)", ticksEverySecond: seconds)
+        }
 
         switch phase {
         case .open:

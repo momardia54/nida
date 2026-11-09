@@ -30,7 +30,14 @@ Prayer times in the macOS menu bar, with the adhan at prayer time. Everything is
 - **Output**: always play the adhan on a chosen speaker (e.g. the Mac's speakers while music goes to
   headphones), with fallback to the system default when it's unplugged. Optionally raise and unmute that
   output for the adhan. The previous volume is restored afterwards, unless you changed it yourself meanwhile.
-- **Notifications** with a *Stop adhan* action, optional reminders, and an optional "window closing" warning.
+- **Quiet times**: while a Focus (Do Not Disturb included) is on, or the output is muted, the adhan and chime
+  stay silent and the Nida menu bar item jiggles instead until you click it. On by default; turn it off in
+  Settings › Adhan › Quiet times. Detecting Focus needs a one-time permission (Privacy & Security › Focus).
+- **Prayed**: mark a prayer as prayed with the ✓ next to it in the menu, by ⌥-clicking the menu bar item, from
+  the notification's *Prayed* button, or with an optional global shortcut (Settings › General). The color and
+  countdown stop and the menu bar moves on to the next prayer, the closing warning is skipped, and an adhan
+  that's still playing stops. Marks are kept on your Mac only.
+- **Notifications** with *Prayed* and *Stop adhan* actions, optional reminders, and an optional "window closing" warning.
 - **Location**: automatic (CoreLocation) or city search. 21 conventions, chosen automatically per country
   (UOIF in France, ISNA in North America, Umm al-Qura in Saudi Arabia, Diyanet in Türkiye, JAKIM in Malaysia…),
   with automatic Ḥanafī Asr where it's the norm. Per-prayer minute offsets let you match your mosque.

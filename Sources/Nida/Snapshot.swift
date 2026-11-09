@@ -39,6 +39,18 @@ enum Snapshot {
             }
         }
 
+        // Fajr, Dhuhr and Asr marked as prayed, midway through Asr.
+        let prayedAt = asr.start.addingTimeInterval(asr.duration * 0.62)
+        app.debugSet(now: prayedAt)
+        for x in w.prefix(3) { Store.shared.setPrayed(true, x, calendar: engine.calendar) }
+        for dark in [false, true] {
+            render(PopoverView(app: app, store: .shared, player: .shared), name: "popover-prayed", dark: dark, out: out)
+        }
+        let strip = StatusRenderer.make(engine: engine, phase: engine.phase(at: prayedAt), now: prayedAt,
+                                        prefs: Store.shared.prefs, isPlaying: false, darkMenuBar: false, prayed: true)
+        print("Prayed menu bar title: \(strip.title)")
+        for x in w.prefix(3) { Store.shared.setPrayed(false, x, calendar: engine.calendar) }
+
         app.debugSet(now: asr.start.addingTimeInterval(asr.duration * 0.3))
         Store.shared.pendingMove = SavedLocation(name: "London", country: "United Kingdom", countryCode: "GB",
                                                  latitude: 51.5072, longitude: -0.1276, timeZoneID: "Europe/London")
